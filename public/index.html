@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A lightweight anonymous group chat interface." />
+    <title>Anonchat</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app app-home">
+      <header class="site-header">
+        <button class="brand" id="homeButton" aria-label="Anonchat home">
+          anonchat<span>.</span>
+        </button>
+        <button class="back-button" id="backButton" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 12H5m6 6-6-6 6-6"></path>
+          </svg>
+          <span>Home</span>
+        </button>
+      </header>
+
+      <main class="home-content" id="homeScreen">
+        <div class="eyebrow"><span class="status-dot"></span>ANONYMOUS GROUP CHAT</div>
+        <h1>find your people.<br /><em>stay unknown.</em></h1>
+        <p>Join a room and talk with people who are here for the same reason. No profile, no sign-up.</p>
+        <button class="primary-button" id="enterButton">
+          Enter anonchat
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14m-6-6 6 6-6 6"></path>
+          </svg>
+        </button>
+      </main>
+
+      <main class="rooms-content" id="roomsScreen" hidden>
+        <div class="rooms-heading">
+          <div>
+            <div class="eyebrow"><span class="status-dot"></span>ROOMS</div>
+            <h1>Choose a conversation.</h1>
+          </div>
+        </div>
+
+        <section class="room-section your-rooms-section">
+          <div class="section-heading">
+            <div><span class="section-kicker">YOUR SPACE</span><h2>Your rooms</h2></div>
+            <span class="room-count" id="myRoomCount">0</span>
+          </div>
+          <div class="personal-rooms" id="myRooms"></div>
+          <button class="empty-your-rooms" id="createRoomButton">
+            <span class="empty-plus">+</span>
+            <span><strong>Create your first room</strong><small>Give your conversation a place to start.</small></span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14m-6-6 6 6-6 6"></path>
+            </svg>
+          </button>
+        </section>
+
+        <section class="room-section everyone-rooms-section">
+          <div class="section-heading">
+            <div><span class="section-kicker">DISCOVER</span><h2>Everyone's rooms</h2></div>
+            <span class="room-count" id="publicRoomCount">0</span>
+          </div>
+          <div class="rooms-list" id="publicRooms"></div>
+        </section>
+      </main>
+
+      <main class="chat-content" id="chatScreen" hidden>
+        <section class="chat-window">
+          <header class="chat-header">
+            <div class="chat-room">
+              <div>
+                <span class="chat-header-label">LIVE ROOM</span>
+                <h1 id="chatRoomName"></h1>
+                <span class="chat-room-status"><i></i><span id="chatOnline">0 online</span></span>
+              </div>
+            </div>
+            <div class="chat-identity">
+              <span>Your anonymous identity <strong id="nickname"></strong></span>
+            </div>
+          </header>
+          <div class="chat-messages" id="chatMessages"></div>
+          <footer class="chat-bottom">
+            <div class="replying-banner" id="replyBanner" hidden>
+              <span>Replying to <strong id="replyAuthor">You</strong><small id="replyText"></small></span>
+              <button type="button" id="cancelReply" aria-label="Cancel reply">×</button>
+            </div>
+            <form class="composer" id="composer">
+              <textarea id="messageInput" placeholder="Write a message" aria-label="Your message" rows="1"></textarea>
+              <button type="submit" id="sendButton" aria-label="Send message" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14m-6-6 6 6-6 6"></path>
+                </svg>
+              </button>
+            </form>
+            <div class="composer-meta"><span>Enter to send</span><span>Shift + Enter for a new line</span></div>
+          </footer>
+        </section>
+      </main>
+
+      <div class="modal-backdrop" id="roomModal" hidden>
+        <form class="create-room-modal" id="roomForm">
+          <div class="modal-heading">
+            <div><span>NEW ROOM</span><h2>Create your room</h2></div>
+            <button type="button" class="modal-close" id="closeModal" aria-label="Close">×</button>
+          </div>
+          <label>Room name<input id="roomName" placeholder="e.g. Design talk" maxlength="40" required /></label>
+          <label>Description<input id="roomDescription" placeholder="What will people talk about?" maxlength="80" /></label>
+          <button class="modal-submit" type="submit">
+            Create and enter
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14m-6-6 6 6-6 6"></path>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+    <div class="connection-banner" id="connectionBanner" role="status" hidden>Connecting…</div>
+    <div class="toast" id="toast" role="alert" hidden></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
