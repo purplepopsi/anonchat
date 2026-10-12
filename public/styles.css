@@ -1368,3 +1368,45 @@ body {
   box-shadow: 0 8px 24px #0003;
 }
 .connection-banner[hidden], .toast[hidden] { display: none; }
+
+/* ---- v2 polish ---- */
+html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+.app { min-height: 100dvh; }
+.home-content { min-height: calc(100dvh - 86px); }
+/* readable text sizes (several were 7-9px) */
+.section-kicker, .owned-label, .chat-header-label, .reply-quote span, .replying-banner small,
+.composer-meta, .privacy-note, .message-actions button, .message-reactions span,
+.personal-room-online, .delete-room-button, .modal-heading span { font-size: 11px; }
+.message-meta, .reply-quote p, .chat-room-status, .chat-identity, .room-description, .personal-room-description { font-size: 12px; }
+.message-bubble, .composer textarea { font-size: 14px; }
+.message-actions { max-width: min(92vw, 380px); }
+.message-actions button { white-space: nowrap; }
+.chat-messages { overscroll-behavior: contain; }
+.chat-identity { font: inherit; font-size: 12px; text-align: left; cursor: pointer; transition: border-color .2s, background .2s; }
+.chat-identity:hover { border-color: #6faf79; background: #ffffffd0; }
+.message.leaving { opacity: 0; transform: scale(.96); transition: opacity .2s, transform .2s; }
+.room-row:active, .personal-room-card:active, .primary-button:active, .empty-your-rooms:active { transform: scale(.985); }
+.room-search {
+  width: 100%; height: 46px; margin: 0 0 12px; padding: 0 16px;
+  border: 1px solid #345c46; border-radius: 12px; background: #061a12b3;
+  color: #eff8f0; font-size: 14px; outline: 0; transition: border-color .2s, box-shadow .25s;
+}
+.room-search:focus { border-color: #55d995; box-shadow: 0 0 0 3px #47bd7522; }
+.room-search::placeholder { color: #627e6d; }
+.no-rooms { margin: 0; padding: 28px 4px; color: #91a996; font-size: 13px; }
+.chat-bottom { position: relative; }
+.typing { min-height: 22px; padding: 0 6px 6px; color: #4f8a64; font-size: 12px; font-style: italic; }
+.typing[hidden] { display: block !important; visibility: hidden; }
+.jump-bottom {
+  position: absolute; right: 22px; bottom: calc(100% + 10px); z-index: 4;
+  border: 0; border-radius: 999px; padding: 8px 14px;
+  background: linear-gradient(145deg, #176d48, #18a36e); color: #fff;
+  font-size: 12px; font-weight: 700; box-shadow: 0 10px 26px #0a4a2e55;
+  animation: reaction-pop .3s var(--ease-smooth) both;
+}
+#charCount { font-variant-numeric: tabular-nums; }
+#charCount.warn { color: #c0504d; font-weight: 700; }
+@media (max-width: 640px) {
+  .home-content { min-height: calc(100dvh - 70px); }
+  .composer textarea, .create-room-modal input, .room-search { font-size: 16px; } /* stops iOS zoom-on-focus */
+}

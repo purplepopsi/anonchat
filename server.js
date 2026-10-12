@@ -26,7 +26,7 @@ const DEFAULT_ROOMS = [
 
 const app = express()
 const server = http.createServer(app)
-const io = new Server(server)
+const io = new Server(server, { maxHttpBufferSize: 1e5 })
 
 app.use(express.static(path.join(__dirname, "public")))
 app.get("/health", (_req, res) => res.json({ ok: true, db: mongoose.connection.readyState === 1 }))
@@ -165,11 +165,11 @@ io.on("connection", (socket) => {
     const now = Date.now()
     socket.data.sent = socket.data.sent.filter((t) => now - t < 8000)
     if (socket.data.sent.length >= 6) fail("You're sending messages too fast.")
-    socket.data.sent.push(now)
 
-    const text = typeof payload?.text === "string" ? payload.text.trim() : ""
+    const text = typeof payload?.text === "string" ? payload.text.trim().replace(/\n{3,}/g, "\n\n") : ""
     if (!text) fail("Message is empty.")
     if (text.length > MAX_MESSAGE_LENGTH) fail(`Messages are limited to ${MAX_MESSAGE_LENGTH} characters.`)
+    socket.data.sent.push(now) // only valid messages count toward the rate limit
 
     let replyTo = null
     if (payload.replyTo && mongoose.isValidObjectId(payload.replyTo)) {
@@ -205,6 +205,19 @@ io.on("connection", (socket) => {
       { new: true }
     ).lean()
     io.to(roomKey(slug)).emit("message:updated", serializeMessage(updated))
+  })
+
+  handle(socket, "typing", async () => {
+    const slug = socket.data.roomId
+    if (slug) socket.to(roomKey(slug)).volatile.emit("typing", { userId, nickname })
+  })
+
+  handle(socket, "message:delete", async (id) => {
+    const slug = socket.data.roomId
+    if (!slug || !mongoose.isValidObjectId(id)) fail("Message not found.")
+    const res = await Message.deleteOne({ _id: id, room: slug, authorId: userId })
+    if (!res.deletedCount) fail("You can only delete your own messages.")
+    io.to(roomKey(slug)).emit("message:deleted", { id, roomId: slug })
   })
 
   handle(socket, "room:create", async (payload) => {
@@ -249,6 +262,7 @@ async function seedRooms() {
 async function main() {
   await mongoose.connect(MONGODB_URI)
   console.log("MongoDB connected")
+  if (ID_SALT === "dev-only-salt") console.warn("Set ID_SALT in .env before deploying.")
   await seedRooms()
   server.listen(PORT, () => console.log(`Anonchat running on http://localhost:${PORT}`))
 }

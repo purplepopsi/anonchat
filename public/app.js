@@ -28,7 +28,12 @@ const state = {
   activeRoom: null,
   replyingTo: null,
   screen: "home",
+  loading: false,
+  query: "",
+  unread: 0,
+  newCount: 0,
 }
+const typers = new Map()
 
 const $ = (selector) => document.querySelector(selector)
 const escapeHtml = (value) =>
@@ -112,6 +117,9 @@ socket.on("message:new", (message) => {
   if (state.messages.some((item) => item.id === message.id)) return
   state.messages.push(message)
   if (state.messages.length > MAX_MESSAGES_IN_MEMORY) state.messages.shift()
+  typers.delete(message.authorId)
+  renderTyping()
+  if (document.hidden && message.authorId !== state.userId) document.title = `(${++state.unread}) Anonchat`
   appendMessage(message)
 })
 socket.on("message:updated", (message) => {
@@ -130,6 +138,8 @@ function showScreen(name) {
     state.messages = []
     state.replyingTo = null
     updateReplyBanner()
+    typers.clear()
+    renderTyping()
   }
   state.screen = name
   Object.entries(screens).forEach(([key, element]) => { element.hidden = key !== name })
@@ -150,32 +160,36 @@ function arrow() {
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>`
 }
 
+const rc = { mine: "", all: "" } // cached markup: skip re-render (and replayed animations) when only counts change
 function renderRooms() {
+  const q = state.query
   const mine = state.rooms.filter(isMine)
-  const everyone = state.rooms.filter((room) => !isMine(room))
+  const everyone = state.rooms.filter((r) => !isMine(r) && (!q || `${r.name} ${r.description}`.toLowerCase().includes(q)))
   $("#myRoomCount").textContent = mine.length
   $("#publicRoomCount").textContent = everyone.length
   $("#createRoomButton").hidden = mine.length > 0
+  const live = (id) => `<span data-online="${escapeHtml(id)}">0</span> online`
 
-  $("#myRooms").innerHTML = mine.map((room) => `
+  const myHtml = mine.map((room) => `
     <div class="personal-room-shell">
       <button class="personal-room-card" data-room="${escapeHtml(room.id)}">
         <span class="personal-room-topline"><span class="owned-label">CREATED BY YOU</span>${arrow()}</span>
         <span class="personal-room-name">${escapeHtml(room.name)}</span>
         <span class="personal-room-description">${escapeHtml(room.description)}</span>
-        <span class="personal-room-online"><i></i>${onlineIn(room.id)} online</span>
+        <span class="personal-room-online"><i></i>${live(room.id)}</span>
       </button>
       <button class="delete-room-button" data-delete-room="${escapeHtml(room.id)}" aria-label="Delete ${escapeHtml(room.name)}">Delete</button>
-    </div>
-  `).join("")
-
-  $("#publicRooms").innerHTML = everyone.map((room, index) => `
+    </div>`).join("")
+  const allHtml = everyone.length ? everyone.map((room, index) => `
     <button class="room-row" data-room="${escapeHtml(room.id)}">
       <span class="room-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="room-details"><span class="room-name">${escapeHtml(room.name)}</span><span class="room-description">${escapeHtml(room.description)}</span></span>
-      <span class="room-online"><i></i>${onlineIn(room.id)} online</span>
-    </button>
-  `).join("")
+      <span class="room-online"><i></i>${live(room.id)}</span>
+    </button>`).join("") : `<p class="no-rooms">No rooms match “${escapeHtml(q)}”.</p>`
+
+  if (myHtml !== rc.mine) $("#myRooms").innerHTML = rc.mine = myHtml
+  if (allHtml !== rc.all) $("#publicRooms").innerHTML = rc.all = allHtml
+  document.querySelectorAll("[data-online]").forEach((el) => { el.textContent = onlineIn(el.dataset.online) })
 }
 
 function updateOnline() {
@@ -189,6 +203,9 @@ function openRoom(id) {
   state.activeRoom = room
   state.replyingTo = null
   state.messages = []
+  state.loading = true
+  typers.clear()
+  renderTyping()
   updateReplyBanner()
   $("#chatRoomName").textContent = room.name
   $("#messageInput").placeholder = `Message #${room.name.toLowerCase().replace(/\s+/g, "-")}`
@@ -203,13 +220,18 @@ function joinActiveRoom() {
   if (!room) return
   socket.emit("room:join", room.id, (res) => {
     if (state.activeRoom?.id !== room.id) return
+    state.loading = false
     if (!res?.ok) {
       toast(res?.error || "Couldn't join that room.")
       leaveDeletedRoom()
       return
     }
-    state.messages = res.messages
+    // keep anything that arrived live while history was loading
+    const last = res.messages.at(-1)?.createdAt ?? ""
+    const seen = new Set(res.messages.map((m) => m.id))
+    state.messages = [...res.messages, ...state.messages.filter((m) => !seen.has(m.id) && m.createdAt > last)]
     renderMessages(false)
+    if (matchMedia("(hover: hover)").matches) $("#messageInput").focus({ preventScroll: true })
   })
 }
 
@@ -241,7 +263,7 @@ function messageHtml(message) {
         ${chips ? `<div class="message-reactions">${chips}</div>` : ""}
         <div class="message-controls">
           <div class="message-actions">
-            <button data-action="reply" data-id="${escapeHtml(message.id)}">Reply</button><span></span>
+            <button data-action="reply" data-id="${escapeHtml(message.id)}">Reply</button><button data-action="copy" data-id="${escapeHtml(message.id)}">Copy</button>${mine ? `<button data-action="delete" data-id="${escapeHtml(message.id)}">Delete</button>` : ""}<span></span>
             ${options}
             <button class="message-actions-close" data-action="close" aria-label="Close reactions">×</button>
           </div>
@@ -253,9 +275,11 @@ function messageHtml(message) {
 function renderMessages(animate = true) {
   const chat = $("#chatMessages")
   chat.classList.toggle("no-message-motion", !animate)
+  state.newCount = 0
+  $("#jumpBottom").hidden = true
   chat.innerHTML = `
     <div class="privacy-note"><span></span>Messages stay anonymous</div>
-    ${state.messages.length === 0 ? `<div class="empty-chat"><span class="empty-dot"></span><h2>No messages yet</h2><p>Start the conversation.</p></div>` : ""}
+    ${state.loading ? `<div class="empty-chat"><span class="empty-dot"></span><p>Loading messages…</p></div>` : state.messages.length === 0 ? `<div class="empty-chat"><span class="empty-dot"></span><h2>No messages yet</h2><p>Start the conversation.</p></div>` : ""}
     ${state.messages.map(messageHtml).join("")}
   `
   requestAnimationFrame(() => chat.scrollTo({ top: chat.scrollHeight, behavior: "auto" }))
@@ -268,6 +292,9 @@ function appendMessage(message) {
   chat.insertAdjacentHTML("beforeend", messageHtml(message))
   if (message.authorId === state.userId || nearBottom) {
     requestAnimationFrame(() => chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" }))
+  } else {
+    state.newCount++
+    showJump()
   }
 }
 
@@ -360,6 +387,7 @@ $("#composer").addEventListener("submit", (event) => {
   const replyTo = state.replyingTo?.id || null
   input.value = ""
   input.style.height = "auto"
+  updateCount()
   $("#sendButton").disabled = true
   state.replyingTo = null
   updateReplyBanner()
@@ -390,6 +418,15 @@ $("#chatMessages").addEventListener("click", (event) => {
     return
   }
   if (action === "close") return closeMessageMenus()
+  if (action === "copy") {
+    const msg = state.messages.find((m) => m.id === id)
+    navigator.clipboard?.writeText(msg?.text || "").then(() => toast("Copied"), () => toast("Couldn't copy."))
+    return closeMessageMenus()
+  }
+  if (action === "delete") {
+    closeMessageMenus()
+    return socket.emit("message:delete", id, (res) => { if (!res?.ok) toast(res?.error || "Couldn't delete.") })
+  }
   if (action === "react") {
     socket.emit("message:react", { id, emoji: button.dataset.reaction }, (res) => {
       if (!res?.ok) toast(res?.error || "Couldn't add reaction.")
@@ -417,11 +454,90 @@ $("#cancelReply").addEventListener("click", () => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeMessageMenus()
-    if (!$("#roomModal").hidden) $("#roomModal").hidden = true
+    $("#roomModal").hidden = true
+    $("#nickModal").hidden = true
   }
 })
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".message-content")) closeMessageMenus()
+})
+
+/* ---------- extras: typing, deletes, scroll pill, nickname, search ---------- */
+function updateCount() {
+  const len = $("#messageInput").value.length
+  const el = $("#charCount")
+  el.textContent = len > 800 ? `${len}/1000` : ""
+  el.classList.toggle("warn", len > 950)
+}
+let lastTyping = 0
+$("#messageInput").addEventListener("input", (event) => {
+  updateCount()
+  const now = Date.now()
+  if (event.target.value.trim() && socket.connected && now - lastTyping > 2000) {
+    lastTyping = now
+    socket.emit("typing")
+  }
+})
+function renderTyping() {
+  const names = [...typers.values()].map((t) => t.nickname)
+  const el = $("#typing")
+  el.hidden = names.length === 0
+  el.textContent = names.length === 1 ? `${names[0]} is typing…`
+    : names.length === 2 ? `${names[0]} and ${names[1]} are typing…`
+    : names.length ? "Several people are typing…" : ""
+}
+socket.on("typing", ({ userId, nickname }) => {
+  if (userId === state.userId || !state.activeRoom) return
+  clearTimeout(typers.get(userId)?.timer)
+  typers.set(userId, { nickname, timer: setTimeout(() => { typers.delete(userId); renderTyping() }, 3500) })
+  renderTyping()
+})
+socket.on("message:deleted", ({ id, roomId }) => {
+  if (roomId !== state.activeRoom?.id) return
+  state.messages = state.messages.filter((m) => m.id !== id)
+  const el = $("#chatMessages").querySelector(`[data-message-id="${CSS.escape(id)}"]`)
+  if (!el) return
+  el.classList.add("leaving")
+  setTimeout(() => { el.remove(); if (!state.messages.length) renderMessages(false) }, 220)
+})
+
+const chatBox = $("#chatMessages")
+function showJump() {
+  const b = $("#jumpBottom")
+  b.hidden = false
+  b.textContent = `↓ ${state.newCount} new message${state.newCount > 1 ? "s" : ""}`
+}
+chatBox.addEventListener("scroll", () => {
+  if (chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 140) {
+    state.newCount = 0
+    $("#jumpBottom").hidden = true
+  }
+}, { passive: true })
+$("#jumpBottom").addEventListener("click", () => chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: "smooth" }))
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { state.unread = 0; document.title = "Anonchat" }
+})
+
+$("#roomSearch").addEventListener("input", (e) => { state.query = e.target.value.trim().toLowerCase(); renderRooms() })
+
+$("#identityButton").addEventListener("click", () => {
+  $("#nickInput").value = nickname
+  $("#nickModal").hidden = false
+  $("#nickInput").select()
+})
+$("#closeNick").addEventListener("click", () => { $("#nickModal").hidden = true })
+$("#nickModal").addEventListener("click", (e) => { if (e.target === $("#nickModal")) $("#nickModal").hidden = true })
+$("#nickForm").addEventListener("submit", (e) => {
+  e.preventDefault()
+  const next = $("#nickInput").value.trim()
+  if (!/^[A-Za-z0-9]{3,24}$/.test(next)) return toast("Use 3–24 letters or numbers.")
+  $("#nickModal").hidden = true
+  if (next === nickname) return
+  nickname = next
+  store.set("anonchat:nickname", next)
+  $("#nickname").textContent = next
+  socket.auth = { clientId, nickname } // reconnect so the server uses the new name; the room is rejoined automatically
+  socket.disconnect().connect()
 })
 
 renderRooms()
